@@ -3,10 +3,18 @@
 > $ . ./.env
 2) Démarrer l'application :
 > $ mvn spring-boot:run
+
 3) Vérification Docker:
-> $ docker ps -a
+> $ docker ps -a  
+![Docker_PS_dev1.png](pictures/Docker_PS_dev1.png)
+
 4) Vérification base :
 >  select * from users;
-5) import postman/yoga.postman_collection.json
-> Tests Api 
+![Mysql_Users_dev1.png](pictures/Mysql_Users_dev1.png)
 
+5) import postman/yoga.postman_collection.json : 
+> Test  Api : http://localhost:8080/api/auth/register
+![Register_Api_Postman_dev1.png](pictures/Register_Api_Postman_dev1.png)
+
+> Test Api POST : http://localhost:8080/api/auth/login
+![Login_Api_Postman_dev1.png](pictures/Login_Api_Postman_dev1.png)
