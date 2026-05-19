@@ -25,5 +25,3 @@
   - payload/response/ErrorResponse.java
   - exception/UnauthorizedException.java
   - exception/GlobalExceptionHandler.java
-Screenshot Erreur :
-  ![Gestion_Erreur_Apres_dev2.png](pictures/Gestion_Erreur_Apres_dev2.png)
