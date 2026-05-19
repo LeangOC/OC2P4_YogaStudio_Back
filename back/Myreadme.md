@@ -18,3 +18,12 @@
 
 > Test Api POST : http://localhost:8080/api/auth/login
 ![Login_Api_Postman_dev1.png](pictures/Login_Api_Postman_dev1.png)
+
+# dev2 : 
+- Mise en place d’une gestion
+  Implémentation : 
+  - payload/response/ErrorResponse.java
+  - exception/UnauthorizedException.java
+  - exception/GlobalExceptionHandler.java
+Screenshot Erreur :
+  ![Gestion_Erreur_Apres_dev2.png](pictures/Gestion_Erreur_Apres_dev2.png)
