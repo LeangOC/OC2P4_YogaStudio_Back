@@ -31,3 +31,7 @@ Screenshot Erreur :
 # dev3
 - Le respect du découpage de l’application en plusieurs couches
   Refactor : UserService, UserController
+
+# dev4
+- Les traitements métiers déportés dans les classes de service métier
+  Refactor : SessionController, SessionService
