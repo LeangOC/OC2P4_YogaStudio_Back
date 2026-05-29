@@ -1,0 +1,4063 @@
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\configuration\AppConfig.java =====
+
+package com.openclassrooms.starterjwt.configuration;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.support.PropertySourcesPlaceholderConfigurer;
+import org.springframework.core.io.FileSystemResource;
+
+@Configuration
+public class AppConfig {
+
+    @Bean
+    public static PropertySourcesPlaceholderConfigurer propertySourcesPlaceholderConfigurer() {
+        PropertySourcesPlaceholderConfigurer configurer = new PropertySourcesPlaceholderConfigurer();
+        configurer.setLocation(new FileSystemResource(".env"));
+        return configurer;
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\controllers\AuthController.java =====
+
+package com.openclassrooms.starterjwt.controllers;
+
+
+import com.openclassrooms.starterjwt.models.User;
+import com.openclassrooms.starterjwt.payload.request.LoginRequest;
+import com.openclassrooms.starterjwt.payload.request.SignupRequest;
+import com.openclassrooms.starterjwt.payload.response.JwtResponse;
+import com.openclassrooms.starterjwt.payload.response.MessageResponse;
+import com.openclassrooms.starterjwt.repository.UserRepository;
+import com.openclassrooms.starterjwt.security.jwt.JwtUtils;
+import com.openclassrooms.starterjwt.security.services.UserDetailsImpl;
+import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/auth")
+public class AuthController {
+    private final AuthenticationManager authenticationManager;
+    private final JwtUtils jwtUtils;
+    private final PasswordEncoder passwordEncoder;
+    private final UserRepository userRepository;
+
+    public AuthController(AuthenticationManager authenticationManager,
+                   PasswordEncoder passwordEncoder,
+                   JwtUtils jwtUtils,
+                   UserRepository userRepository) {
+        this.authenticationManager = authenticationManager;
+        this.jwtUtils = jwtUtils;
+        this.passwordEncoder = passwordEncoder;
+        this.userRepository = userRepository;
+    }
+
+    @PostMapping("/login")
+    public ResponseEntity<?> authenticateUser(@Valid @RequestBody LoginRequest loginRequest) {
+
+        Authentication authentication = authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(loginRequest.getEmail(), loginRequest.getPassword()));
+
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+        String jwt = jwtUtils.generateJwtToken(authentication);
+        UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
+
+        boolean isAdmin = false;
+        User user = this.userRepository.findByEmail(userDetails.getUsername()).orElse(null);
+        if (user != null) {
+            isAdmin = user.isAdmin();
+        }
+
+        return ResponseEntity.ok(new JwtResponse(jwt,
+                userDetails.getId(),
+                userDetails.getUsername(),
+                userDetails.getFirstName(),
+                userDetails.getLastName(),
+                isAdmin));
+    }
+
+    @PostMapping("/register")
+    public ResponseEntity<?> registerUser(@Valid @RequestBody SignupRequest signUpRequest) {
+        if (userRepository.existsByEmail(signUpRequest.getEmail())) {
+            return ResponseEntity
+                    .badRequest()
+                    .body(new MessageResponse("Error: Email is already taken!"));
+        }
+
+        // Create new user's account
+        User user = new User(signUpRequest.getEmail(),
+                signUpRequest.getLastName(),
+                signUpRequest.getFirstName(),
+                passwordEncoder.encode(signUpRequest.getPassword()),
+                false);
+
+        userRepository.save(user);
+
+        return ResponseEntity.ok(new MessageResponse("User registered successfully!"));
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\controllers\SessionController.java =====
+
+package com.openclassrooms.starterjwt.controllers;
+
+
+import com.openclassrooms.starterjwt.dto.SessionDto;
+import com.openclassrooms.starterjwt.mapper.SessionMapper;
+import com.openclassrooms.starterjwt.models.Session;
+import com.openclassrooms.starterjwt.services.SessionService;
+import jakarta.validation.Valid;
+import lombok.extern.log4j.Log4j2;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/session")
+@Log4j2
+public class SessionController {
+    private final SessionMapper sessionMapper;
+    private final SessionService sessionService;
+
+
+    public SessionController(SessionService sessionService,
+                             SessionMapper sessionMapper) {
+        this.sessionMapper = sessionMapper;
+        this.sessionService = sessionService;
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<SessionDto> findById(@PathVariable Long id) {
+        Session session = this.sessionService.getById(id);
+
+        return ResponseEntity.ok(this.sessionMapper.toDto(session));
+    }
+
+    @GetMapping()
+    public ResponseEntity<?> findAll() {
+        List<Session> sessions = this.sessionService.findAll();
+
+        return ResponseEntity.ok().body(this.sessionMapper.toDto(sessions));
+    }
+
+    @PostMapping()
+    public ResponseEntity<?> create(@Valid @RequestBody SessionDto sessionDto) {
+        log.info(sessionDto);
+
+        Session session = this.sessionService.create(this.sessionMapper.toEntity(sessionDto));
+
+        log.info(session);
+        return ResponseEntity.ok().body(this.sessionMapper.toDto(session));
+    }
+
+    @PutMapping("{id}")
+    public ResponseEntity<?> update(@PathVariable("id") String id, @Valid @RequestBody SessionDto sessionDto) {
+        try {
+            Session session = this.sessionService.update(Long.parseLong(id), this.sessionMapper.toEntity(sessionDto));
+
+            return ResponseEntity.ok().body(this.sessionMapper.toDto(session));
+        } catch (NumberFormatException e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+    @DeleteMapping("{id}")
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+
+        this.sessionService.delete(id);
+
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("{id}/participate/{userId}")
+    public ResponseEntity<Void> participate(
+            @PathVariable Long id,
+            @PathVariable Long userId) {
+
+        this.sessionService.participate(id, userId);
+
+        return ResponseEntity.ok().build();
+    }
+
+    @DeleteMapping("{id}/participate/{userId}")
+    public ResponseEntity<?> noLongerParticipate(@PathVariable("id") String id, @PathVariable("userId") String userId) {
+        try {
+            this.sessionService.noLongerParticipate(Long.parseLong(id), Long.parseLong(userId));
+
+            return ResponseEntity.ok().build();
+        } catch (NumberFormatException e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\controllers\TeacherController.java =====
+
+package com.openclassrooms.starterjwt.controllers;
+
+import com.openclassrooms.starterjwt.mapper.TeacherMapper;
+import com.openclassrooms.starterjwt.models.Teacher;
+import com.openclassrooms.starterjwt.services.TeacherService;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/teacher")
+public class TeacherController {
+    private final TeacherMapper teacherMapper;
+    private final TeacherService teacherService;
+
+
+    public TeacherController(TeacherService teacherService,
+                             TeacherMapper teacherMapper) {
+        this.teacherMapper = teacherMapper;
+        this.teacherService = teacherService;
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<?> findById(@PathVariable("id") String id) {
+        try {
+            Teacher teacher = this.teacherService.findById(Long.valueOf(id));
+
+            if (teacher == null) {
+                return ResponseEntity.notFound().build();
+            }
+
+            return ResponseEntity.ok().body(this.teacherMapper.toDto(teacher));
+        } catch (NumberFormatException e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+    @GetMapping()
+    public ResponseEntity<?> findAll() {
+        List<Teacher> teachers = this.teacherService.findAll();
+
+        return ResponseEntity.ok().body(this.teacherMapper.toDto(teachers));
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\controllers\UserController.java =====
+
+package com.openclassrooms.starterjwt.controllers;
+
+import com.openclassrooms.starterjwt.mapper.UserMapper;
+import com.openclassrooms.starterjwt.dto.UserDto;
+import com.openclassrooms.starterjwt.models.User;
+import com.openclassrooms.starterjwt.services.UserService;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+
+import java.util.Objects;
+
+@RestController
+@RequestMapping("/api/user")
+public class UserController {
+    private final UserMapper userMapper;
+    private final UserService userService;
+
+
+    public UserController(UserService userService,
+                          UserMapper userMapper) {
+        this.userMapper = userMapper;
+        this.userService = userService;
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<UserDto> findById(@PathVariable Long id) {
+        User user = this.userService.findById(id);
+        return ResponseEntity.ok(this.userMapper.toDto(user));
+    }
+
+    @DeleteMapping("{id}")
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+        this.userService.delete(id);
+        return ResponseEntity.ok().build();
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\dto\SessionDto.java =====
+
+package com.openclassrooms.starterjwt.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.time.LocalDateTime;
+import java.util.Date;
+import java.util.List;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class SessionDto {
+    private Long id;
+
+    @NotBlank
+    @Size(max = 50)
+    private String name;
+
+    @NotNull
+    private Date date;
+
+    @NotNull
+    private Long teacher_id;
+
+    @NotNull
+    @Size(max = 2500)
+    private String description;
+
+    private List<Long> users;
+
+    private LocalDateTime createdAt;
+
+    private LocalDateTime updatedAt;
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\dto\TeacherDto.java =====
+
+package com.openclassrooms.starterjwt.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+
+import java.time.LocalDateTime;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class TeacherDto {
+    private Long id;
+
+    @NotBlank
+    @Size(max = 20)
+    private String lastName;
+
+    @NotBlank
+    @Size(max = 20)
+    private String firstName;
+
+    private LocalDateTime createdAt;
+
+    private LocalDateTime updatedAt;
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\dto\UserDto.java =====
+
+package com.openclassrooms.starterjwt.dto;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.Size;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import lombok.NonNull;
+
+import java.time.LocalDateTime;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class UserDto {
+    private Long id;
+
+    @NonNull
+    @Size(max = 50)
+    @Email
+    private String email;
+
+    @NonNull
+    @Size(max = 20)
+    private String lastName;
+
+    @NonNull
+    @Size(max = 20)
+    private String firstName;
+
+    @NonNull
+    private boolean admin;
+
+    @JsonIgnore
+    @Size(max = 120)
+    private String password;
+
+    private LocalDateTime createdAt;
+
+    private LocalDateTime updatedAt;
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\exception\BadRequestException.java =====
+
+package com.openclassrooms.starterjwt.exception;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.ResponseStatus;
+
+@ResponseStatus(value = HttpStatus.BAD_REQUEST)
+public class BadRequestException extends RuntimeException {
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\exception\GlobalExceptionHandler.java =====
+
+package com.openclassrooms.starterjwt.exception;
+
+import com.openclassrooms.starterjwt.payload.response.ErrorResponse;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ControllerAdvice;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+
+import java.time.LocalDateTime;
+
+@ControllerAdvice
+public class GlobalExceptionHandler {
+
+    @ExceptionHandler(NumberFormatException.class)
+    public ResponseEntity<ErrorResponse> handleNumberFormatException(
+            NumberFormatException ex) {
+
+        ErrorResponse error = new ErrorResponse(
+                HttpStatus.BAD_REQUEST.value(),
+                "BAD_REQUEST",
+                "Invalid id format",
+                LocalDateTime.now()
+        );
+        return ResponseEntity.badRequest().body(error);
+    }
+
+    @ExceptionHandler(NotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNotFoundException(
+            NotFoundException ex) {
+
+        ErrorResponse error = new ErrorResponse(
+                HttpStatus.NOT_FOUND.value(),
+                "NOT_FOUND",
+                "Resource not found",
+                LocalDateTime.now()
+        );
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
+    }
+    @ExceptionHandler(BadRequestException.class)
+    public ResponseEntity<ErrorResponse> handleBadRequestException(
+            BadRequestException ex) {
+
+        ErrorResponse error = new ErrorResponse(
+                HttpStatus.BAD_REQUEST.value(),
+                "BAD_REQUEST",
+                "Bad request",
+                LocalDateTime.now()
+        );
+
+        return ResponseEntity.badRequest().body(error);
+    }
+
+    @ExceptionHandler(UnauthorizedException.class)
+    public ResponseEntity<ErrorResponse> handleUnauthorizedException(
+            UnauthorizedException ex) {
+
+        ErrorResponse error = new ErrorResponse(
+                HttpStatus.UNAUTHORIZED.value(),
+                "UNAUTHORIZED",
+                ex.getMessage(),
+                LocalDateTime.now()
+        );
+
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(error);
+    }
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ErrorResponse> handleValidationException(
+            MethodArgumentNotValidException ex) {
+
+        ErrorResponse error = new ErrorResponse(
+                HttpStatus.BAD_REQUEST.value(),
+                "VALIDATION_ERROR",
+                ex.getBindingResult().getFieldError().getDefaultMessage(),
+                LocalDateTime.now()
+        );
+
+        return ResponseEntity.badRequest().body(error);
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\exception\NotFoundException.java =====
+
+package com.openclassrooms.starterjwt.exception;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.ResponseStatus;
+
+@ResponseStatus(value = HttpStatus.NOT_FOUND)
+public class NotFoundException extends RuntimeException {
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\exception\UnauthorizedException.java =====
+
+package com.openclassrooms.starterjwt.exception;
+public class UnauthorizedException extends RuntimeException {
+    public UnauthorizedException(String message) {
+        super(message);
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\mapper\EntityMapper.java =====
+
+package com.openclassrooms.starterjwt.mapper;
+
+import java.util.List;
+
+public interface EntityMapper<D, E> {
+
+    E toEntity(D dto);
+
+    D toDto(E entity);
+
+    List<E> toEntity(List<D> dtoList);
+
+    List<D> toDto(List<E> entityList);
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\mapper\SessionMapper.java =====
+
+package com.openclassrooms.starterjwt.mapper;
+
+import com.openclassrooms.starterjwt.dto.SessionDto;
+import com.openclassrooms.starterjwt.models.Session;
+import com.openclassrooms.starterjwt.models.User;
+import com.openclassrooms.starterjwt.services.TeacherService;
+import com.openclassrooms.starterjwt.services.UserService;
+import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
+import org.mapstruct.Mappings;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Optional;
+import java.util.stream.Collectors;
+
+@Component
+@Mapper(componentModel = "spring", uses = {UserService.class}, imports = {Arrays.class, Collectors.class, Session.class, User.class, Collections.class, Optional.class})
+public abstract class SessionMapper implements EntityMapper<SessionDto, Session> {
+
+    @Autowired
+    TeacherService teacherService;
+    @Autowired
+    UserService userService;
+
+    @Mappings({
+            @Mapping(source = "description", target = "description"),
+            @Mapping(target = "teacher", expression = "java(sessionDto.getTeacher_id() != null ? this.teacherService.findById(sessionDto.getTeacher_id()) : null)"),
+            @Mapping(target = "users", expression = "java(Optional.ofNullable(sessionDto.getUsers()).orElseGet(Collections::emptyList).stream().map(user_id -> { User user = this.userService.findById(user_id); if (user != null) { return user; } return null; }).collect(Collectors.toList()))"),
+    })
+    public abstract Session toEntity(SessionDto sessionDto);
+
+
+    @Mappings({
+            @Mapping(source = "description", target = "description"),
+            @Mapping(source = "session.teacher.id", target = "teacher_id"),
+            @Mapping(target = "users", expression = "java(Optional.ofNullable(session.getUsers()).orElseGet(Collections::emptyList).stream().map(u -> u.getId()).collect(Collectors.toList()))"),
+    })
+    public abstract SessionDto toDto(Session session);
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\mapper\TeacherMapper.java =====
+
+package com.openclassrooms.starterjwt.mapper;
+
+import com.openclassrooms.starterjwt.dto.TeacherDto;
+import com.openclassrooms.starterjwt.models.Teacher;
+import org.mapstruct.Mapper;
+import org.springframework.stereotype.Component;
+
+@Component
+@Mapper(componentModel = "spring")
+public interface TeacherMapper extends EntityMapper<TeacherDto, Teacher> {
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\mapper\UserMapper.java =====
+
+package com.openclassrooms.starterjwt.mapper;
+
+import com.openclassrooms.starterjwt.dto.UserDto;
+import com.openclassrooms.starterjwt.models.User;
+import org.mapstruct.Mapper;
+import org.springframework.stereotype.Component;
+
+@Component
+@Mapper(componentModel = "spring")
+public interface UserMapper extends EntityMapper<UserDto, User> {
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\models\Session.java =====
+
+package com.openclassrooms.starterjwt.models;
+
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EntityListeners;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.JoinTable;
+import jakarta.persistence.ManyToMany;
+import jakarta.persistence.OneToOne;
+import jakarta.persistence.Table;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.NoArgsConstructor;
+import lombok.ToString;
+import lombok.experimental.Accessors;
+import org.hibernate.annotations.UpdateTimestamp;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+
+import java.time.LocalDateTime;
+import java.util.Date;
+import java.util.List;
+
+@Entity
+@Table(name = "sessions")
+@EntityListeners(AuditingEntityListener.class)
+@Data
+@Accessors(chain = true)
+@EqualsAndHashCode(of = {"id"})
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@ToString
+public class Session {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @NotBlank
+    @Size(max = 50)
+    @Column(nullable = false)
+    private String name;
+
+    @NotNull
+    @Column(nullable = false)
+    private Date date;
+
+    @NotNull
+    @Size(max = 2500)
+    @Column(nullable = false)
+    private String description;
+
+    @OneToOne
+    @JoinColumn(name = "teacher_id", referencedColumnName = "id")
+    private Teacher teacher;
+
+    @ManyToMany(fetch = FetchType.EAGER)
+    @JoinTable(
+            name = "PARTICIPATE",
+            joinColumns = @JoinColumn(name = "session_id"),
+            inverseJoinColumns = @JoinColumn(name = "user_id"))
+    private List<User> users;
+
+    @CreatedDate
+    @Column(updatable = false, columnDefinition="TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+    private LocalDateTime createdAt;
+
+    @UpdateTimestamp
+    @Column(columnDefinition="TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+    private LocalDateTime updatedAt;
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\models\Teacher.java =====
+
+package com.openclassrooms.starterjwt.models;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EntityListeners;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.NoArgsConstructor;
+import lombok.ToString;
+import lombok.experimental.Accessors;
+import org.hibernate.annotations.UpdateTimestamp;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+
+
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "teachers")
+@EntityListeners(AuditingEntityListener.class)
+@Data
+@Accessors(chain = true)
+@EqualsAndHashCode(of = {"id"})
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@ToString
+public class Teacher {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @NotBlank
+    @Size(max = 20)
+    @Column(nullable = false)
+    private String lastName;
+
+    @NotBlank
+    @Size(max = 20)
+    @Column(nullable = false)
+    private String firstName;
+
+    @CreatedDate
+    @Column(updatable = false, columnDefinition="TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+    private LocalDateTime createdAt;
+
+    @UpdateTimestamp
+    @Column(columnDefinition="TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+    private LocalDateTime updatedAt;
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\models\User.java =====
+
+package com.openclassrooms.starterjwt.models;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EntityListeners;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.Size;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.NoArgsConstructor;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
+import lombok.ToString;
+import lombok.experimental.Accessors;
+import org.hibernate.annotations.UpdateTimestamp;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+
+
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "users", uniqueConstraints = {
+        @UniqueConstraint(columnNames = "email")
+})
+@Data
+@Accessors(chain = true)
+@EntityListeners(AuditingEntityListener.class)
+@EqualsAndHashCode(of = {"id"})
+@Builder
+@NoArgsConstructor
+@RequiredArgsConstructor
+@AllArgsConstructor
+@ToString
+public class User {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @NonNull
+    @Size(max = 50)
+    @Email
+    @Column(nullable = false)
+    private String email;
+
+    @NonNull
+    @Size(max = 20)
+    @Column(nullable = false)
+    private String lastName;
+
+    @NonNull
+    @Size(max = 20)
+    @Column(nullable = false)
+    private String firstName;
+
+    @NonNull
+    @Size(max = 120)
+    @Column(nullable = false)
+    private String password;
+
+    @NonNull
+    private boolean admin;
+
+    @CreatedDate
+    @Column(updatable = false, columnDefinition="TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+    private LocalDateTime createdAt;
+
+    @UpdateTimestamp
+    @Column(columnDefinition="TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+    private LocalDateTime updatedAt;
+
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\payload\request\LoginRequest.java =====
+
+package com.openclassrooms.starterjwt.payload.request;
+
+
+import jakarta.validation.constraints.NotBlank;
+import lombok.Data;
+
+@Data
+public class LoginRequest {
+    @NotBlank
+    private String email;
+
+    @NotBlank
+    private String password;
+
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\payload\request\SignupRequest.java =====
+
+package com.openclassrooms.starterjwt.payload.request;
+
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+import lombok.Data;
+
+
+
+@Data
+public class SignupRequest {
+    @NotBlank
+    @Size(max = 50)
+    @Email
+    private String email;
+
+    @NotBlank
+    @Size(min = 3, max = 20)
+    private String firstName;
+
+    @NotBlank
+    @Size(min = 3, max = 20)
+    private String lastName;
+
+    @NotBlank
+    @Size(min = 6, max = 40)
+    private String password;
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\payload\response\ErrorResponse.java =====
+
+package com.openclassrooms.starterjwt.payload.response;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import java.time.LocalDateTime;
+
+@Data
+@AllArgsConstructor
+public class ErrorResponse {
+    private int status;
+    private String error;
+    private String message;
+    private LocalDateTime timestamp;
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\payload\response\JwtResponse.java =====
+
+package com.openclassrooms.starterjwt.payload.response;
+
+import lombok.Getter;
+import lombok.Setter;
+
+@Getter
+@Setter
+public class JwtResponse {
+    private String token;
+    private String type = "Bearer";
+    private Long id;
+    private String username;
+    private String firstName;
+    private String lastName;
+
+    private Boolean admin;
+
+    public JwtResponse(String accessToken, Long id, String username, String firstName, String lastName, Boolean admin) {
+        this.token = accessToken;
+        this.id = id;
+        this.firstName = firstName;
+        this.lastName = lastName;
+        this.username = username;
+        this.admin = admin;
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\payload\response\MessageResponse.java =====
+
+package com.openclassrooms.starterjwt.payload.response;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+
+@Data
+@AllArgsConstructor
+public class MessageResponse {
+    private String message;
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\repository\SessionRepository.java =====
+
+package com.openclassrooms.starterjwt.repository;
+
+import com.openclassrooms.starterjwt.models.Session;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public interface SessionRepository extends JpaRepository<Session, Long> {
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\repository\TeacherRepository.java =====
+
+package com.openclassrooms.starterjwt.repository;
+
+import com.openclassrooms.starterjwt.models.Teacher;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public interface TeacherRepository extends JpaRepository<Teacher, Long> {
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\repository\UserRepository.java =====
+
+package com.openclassrooms.starterjwt.repository;
+
+import com.openclassrooms.starterjwt.models.User;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.Optional;
+
+@Repository
+public interface UserRepository extends JpaRepository<User, Long> {
+    Optional<User> findByEmail(String email);
+
+    Boolean existsByEmail(String email);
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\security\jwt\AuthEntryPointJwt.java =====
+
+package com.openclassrooms.starterjwt.security.jwt;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.MediaType;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.web.AuthenticationEntryPoint;
+import org.springframework.stereotype.Component;
+
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+
+@Slf4j
+@Component
+public class AuthEntryPointJwt { // implements AuthenticationEntryPoint
+//
+//    private static final Logger logger = LoggerFactory.getLogger(AuthEntryPointJwt.class);
+//
+//    @Override
+//    public void commence(HttpServletRequest request, HttpServletResponse response, AuthenticationException authException)
+//            throws IOException, ServletException {
+//        logger.error("Unauthorized error: {}", authException.getMessage());
+//
+//        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+//        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+//
+//        final Map<String, Object> body = new HashMap<>();
+//        body.put("status", HttpServletResponse.SC_UNAUTHORIZED);
+//        body.put("error", "Unauthorized");
+//        body.put("message", authException.getMessage());
+//        body.put("path", request.getServletPath());
+//
+//        final ObjectMapper mapper = new ObjectMapper();
+//        mapper.writeValue(response.getOutputStream(), body);
+//    }
+
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\security\jwt\AuthTokenFilter.java =====
+
+package com.openclassrooms.starterjwt.security.jwt;
+
+import com.openclassrooms.starterjwt.security.services.UserDetailsServiceImpl;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
+import org.springframework.util.StringUtils;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+
+import java.io.IOException;
+
+public class AuthTokenFilter extends OncePerRequestFilter {
+    private static final Logger logger = LoggerFactory.getLogger(AuthTokenFilter.class);
+    @Autowired
+    private JwtUtils jwtUtils;
+    @Autowired
+    private UserDetailsServiceImpl userDetailsService;
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+            throws ServletException, IOException {
+        try {
+            String jwt = parseJwt(request);
+            if (jwt != null && jwtUtils.validateJwtToken(jwt)) {
+                String username = jwtUtils.getUserNameFromJwtToken(jwt);
+
+                UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+                UsernamePasswordAuthenticationToken authentication =
+                        new UsernamePasswordAuthenticationToken(
+                                userDetails,
+                                null,
+                                userDetails.getAuthorities());
+                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+
+                SecurityContextHolder.getContext().setAuthentication(authentication);
+            }
+        } catch (Exception e) {
+            logger.error("Cannot set user authentication: {}", e);
+        }
+
+        filterChain.doFilter(request, response);
+    }
+
+    private String parseJwt(HttpServletRequest request) {
+        String headerAuth = request.getHeader("Authorization");
+
+        if (StringUtils.hasText(headerAuth) && headerAuth.startsWith("Bearer ")) {
+            return headerAuth.substring(7, headerAuth.length());
+        }
+
+        return null;
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\security\jwt\JwtUtils.java =====
+
+package com.openclassrooms.starterjwt.security.jwt;
+
+import com.openclassrooms.starterjwt.security.services.UserDetailsImpl;
+import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.MalformedJwtException;
+import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.SignatureException;
+import io.jsonwebtoken.UnsupportedJwtException;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.Authentication;
+import org.springframework.stereotype.Component;
+
+import java.util.Date;
+
+@Slf4j
+@Component
+public class JwtUtils {
+    @Value("${oc.app.jwtSecret}")
+    private String jwtSecret;
+    //String jwtSecret; //ajout pour test
+
+    @Value("${oc.app.jwtExpirationMs}")
+    private int jwtExpirationMs;
+    //int jwtExpirationMs;
+
+    public String generateJwtToken(Authentication authentication) {
+
+        UserDetailsImpl userPrincipal = (UserDetailsImpl) authentication.getPrincipal();
+
+        return Jwts.builder()
+                .setSubject((userPrincipal.getUsername()))
+                .setIssuedAt(new Date())
+                .setExpiration(new Date((new Date()).getTime() + jwtExpirationMs))
+                .signWith(SignatureAlgorithm.HS512, jwtSecret)
+                .compact();
+    }
+
+    public String getUserNameFromJwtToken(String token) {
+        return Jwts.parser().setSigningKey(jwtSecret).build().parseClaimsJws(token).getBody().getSubject();
+    }
+
+    public boolean validateJwtToken(String authToken) {
+        try {
+            Jwts.parser().setSigningKey(jwtSecret).build().parseClaimsJws(authToken);
+            return true;
+        } catch (SignatureException e) {
+            log.error("Invalid JWT signature: {}", e.getMessage());
+        } catch (MalformedJwtException e) {
+            log.error("Invalid JWT token: {}", e.getMessage());
+        } catch (ExpiredJwtException e) {
+            log.error("JWT token is expired: {}", e.getMessage());
+        } catch (UnsupportedJwtException e) {
+            log.error("JWT token is unsupported: {}", e.getMessage());
+        } catch (IllegalArgumentException e) {
+            log.error("JWT claims string is empty: {}", e.getMessage());
+        }
+        return false;
+    }
+    public void setJwtSecret(String jwtSecret) {
+        this.jwtSecret = jwtSecret;
+    }
+
+    public void setJwtExpirationMs(int jwtExpirationMs) {
+        this.jwtExpirationMs = jwtExpirationMs;
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\security\services\UserDetailsImpl.java =====
+
+package com.openclassrooms.starterjwt.security.services;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetails;
+
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.Objects;
+
+@Builder
+@AllArgsConstructor
+@Getter
+public class UserDetailsImpl implements UserDetails {
+    private static final long serialVersionUID = 1L;
+
+    private Long id;
+
+    private String username;
+
+    private String firstName;
+
+    private String lastName;
+
+    private Boolean admin;
+
+    @JsonIgnore
+    private String password;
+
+    public Collection<? extends GrantedAuthority> getAuthorities() {
+        return new HashSet<GrantedAuthority>();
+    }
+
+    @Override
+    public boolean isAccountNonExpired() {
+        return true;
+    }
+
+    @Override
+    public boolean isAccountNonLocked() {
+        return true;
+    }
+
+    @Override
+    public boolean isCredentialsNonExpired() {
+        return true;
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return true;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o)
+            return true;
+        if (o == null || getClass() != o.getClass())
+            return false;
+        UserDetailsImpl user = (UserDetailsImpl) o;
+        return Objects.equals(id, user.id);
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\security\services\UserDetailsServiceImpl.java =====
+
+package com.openclassrooms.starterjwt.security.services;
+
+import com.openclassrooms.starterjwt.models.User;
+import com.openclassrooms.starterjwt.repository.UserRepository;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class UserDetailsServiceImpl implements UserDetailsService {
+    UserRepository userRepository;
+
+    UserDetailsServiceImpl(UserRepository userRepository) {
+        this.userRepository = userRepository;
+    }
+
+    @Override
+    @Transactional
+    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+        User user = userRepository.findByEmail(username)
+                .orElseThrow(() -> new UsernameNotFoundException("User Not Found with email: " + username));
+
+        return UserDetailsImpl
+                .builder()
+                .id(user.getId())
+                .username(user.getEmail())
+                .lastName(user.getLastName())
+                .firstName(user.getFirstName())
+                .password(user.getPassword())
+                .build();
+    }
+
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\security\WebSecurityConfig.java =====
+
+package com.openclassrooms.starterjwt.security;
+
+import com.openclassrooms.starterjwt.security.jwt.AuthEntryPointJwt;
+import com.openclassrooms.starterjwt.security.jwt.AuthTokenFilter;
+import com.openclassrooms.starterjwt.security.services.UserDetailsServiceImpl;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+
+@Configuration
+@EnableWebSecurity
+public class WebSecurityConfig {
+    @Autowired
+    private UserDetailsServiceImpl userDetailsService;
+
+    @Bean
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration authConfig) throws Exception {
+        return authConfig.getAuthenticationManager();
+    }
+
+    @Bean
+    public AuthTokenFilter authenticationJwtTokenFilter() {
+        return new AuthTokenFilter();
+    }
+
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public DaoAuthenticationProvider authenticationProvider() {
+        DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
+        authProvider.setUserDetailsService(userDetailsService);
+        authProvider.setPasswordEncoder(passwordEncoder());
+        return authProvider;
+    }
+
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        http
+                .cors(AbstractHttpConfigurer::disable)
+                .csrf(AbstractHttpConfigurer::disable)
+                .sessionManagement(management -> management.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authenticationProvider(authenticationProvider())
+                .authorizeHttpRequests(authorize -> authorize
+                        // No auth needed on :
+                        .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/**").authenticated()
+                        .anyRequest().authenticated()
+                )
+                .addFilterBefore(authenticationJwtTokenFilter(), UsernamePasswordAuthenticationFilter.class)
+                .exceptionHandling(exceptionHandling -> exceptionHandling.authenticationEntryPoint(
+                        (request, response, exception) -> {
+                            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, exception.getMessage());
+                        }));
+        return http.build();
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\services\SessionService.java =====
+
+package com.openclassrooms.starterjwt.services;
+
+import com.openclassrooms.starterjwt.exception.BadRequestException;
+import com.openclassrooms.starterjwt.exception.NotFoundException;
+import com.openclassrooms.starterjwt.models.Session;
+import com.openclassrooms.starterjwt.models.User;
+import com.openclassrooms.starterjwt.repository.SessionRepository;
+import com.openclassrooms.starterjwt.repository.UserRepository;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+import java.util.stream.Collectors;
+
+@Service
+public class SessionService {
+    private final SessionRepository sessionRepository;
+
+    private final UserRepository userRepository;
+
+    public SessionService(SessionRepository sessionRepository, UserRepository userRepository) {
+        this.sessionRepository = sessionRepository;
+        this.userRepository = userRepository;
+    }
+
+    public Session create(Session session) {
+        return this.sessionRepository.save(session);
+    }
+
+    public void delete(Long id) {
+        Session session = getById(id);
+        this.sessionRepository.delete(session);
+    }
+
+    public List<Session> findAll() {
+        return this.sessionRepository.findAll();
+    }
+
+    public Session getById(Long id) {
+        return this.sessionRepository.findById(id)
+                .orElseThrow(NotFoundException::new);
+    }
+
+    public Session update(Long id, Session session) {
+        session.setId(id);
+        return this.sessionRepository.save(session);
+    }
+
+    public void participate(Long id, Long userId) {
+        Session session = getById(id);
+        User user = this.userRepository.findById(userId)
+                .orElseThrow(NotFoundException::new);
+
+        boolean alreadyParticipate = session.getUsers()
+                .stream()
+                .anyMatch(u -> u.getId().equals(userId));
+
+        if (alreadyParticipate) {
+            throw new BadRequestException();
+        }
+
+        session.getUsers().add(user);
+
+        this.sessionRepository.save(session);
+    }
+
+    public void noLongerParticipate(Long id, Long userId) {
+        Session session = this.sessionRepository.findById(id).orElse(null);
+        if (session == null) {
+            throw new NotFoundException();
+        }
+
+        boolean alreadyParticipate = session.getUsers().stream().anyMatch(o -> o.getId().equals(userId));
+        if (!alreadyParticipate) {
+            throw new BadRequestException();
+        }
+
+        session.setUsers(session.getUsers().stream().filter(user -> !user.getId().equals(userId)).collect(Collectors.toList()));
+
+        this.sessionRepository.save(session);
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\services\TeacherService.java =====
+
+package com.openclassrooms.starterjwt.services;
+
+import com.openclassrooms.starterjwt.models.Teacher;
+import com.openclassrooms.starterjwt.repository.TeacherRepository;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+
+@Service
+public class TeacherService {
+    private final TeacherRepository teacherRepository;
+
+    public TeacherService(TeacherRepository teacherRepository) {
+        this.teacherRepository = teacherRepository;
+    }
+
+    public List<Teacher> findAll() {
+        return this.teacherRepository.findAll();
+    }
+
+    public Teacher findById(Long id) {
+        return this.teacherRepository.findById(id).orElse(null);
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\services\UserService.java =====
+
+package com.openclassrooms.starterjwt.services;
+
+import com.openclassrooms.starterjwt.exception.NotFoundException;
+import com.openclassrooms.starterjwt.exception.UnauthorizedException;
+import com.openclassrooms.starterjwt.models.User;
+import com.openclassrooms.starterjwt.repository.UserRepository;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.stereotype.Service;
+
+import java.util.Objects;
+
+@Service
+public class UserService {
+
+    private final UserRepository userRepository;
+
+    public UserService(UserRepository userRepository) {
+        this.userRepository = userRepository;
+    }
+
+    public User findById(Long id) {
+        return this.userRepository.findById(id)
+                .orElseThrow(NotFoundException::new);
+    }
+
+    public void delete(Long id) {
+
+        User user = findById(id);
+
+        UserDetails userDetails = (UserDetails) SecurityContextHolder
+                .getContext()
+                .getAuthentication()
+                .getPrincipal();
+
+        if (!Objects.equals(userDetails.getUsername(), user.getEmail())) {
+            throw new UnauthorizedException(
+                    "You are not authorized to delete this user"
+            );
+        }
+
+        this.userRepository.delete(user);
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\main\java\com\openclassrooms\starterjwt\SpringBootSecurityJwtApplication.java =====
+
+package com.openclassrooms.starterjwt;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
+
+@SpringBootApplication
+@EnableJpaAuditing
+public class SpringBootSecurityJwtApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(SpringBootSecurityJwtApplication.class, args);
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\test\java\com\openclassrooms\starterjwt\controllers\AuthControllerTest.java =====
+
+package com.openclassrooms.starterjwt.controllers;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.openclassrooms.starterjwt.payload.request.LoginRequest;
+import com.openclassrooms.starterjwt.payload.request.SignupRequest;
+import com.openclassrooms.starterjwt.repository.UserRepository;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+
+import org.springframework.http.MediaType;
+
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.web.servlet.MockMvc;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+@SpringBootTest
+@AutoConfigureMockMvc
+@ActiveProfiles("test")
+class AuthControllerTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @BeforeEach
+    void setup() {
+
+        userRepository.deleteAll();
+    }
+
+    @Test
+    void shouldRegisterUser() throws Exception {
+
+        SignupRequest signupRequest =
+                new SignupRequest();
+
+        signupRequest.setEmail("new@test.com");
+
+        signupRequest.setFirstName("John");
+
+        signupRequest.setLastName("Doe");
+
+        signupRequest.setPassword("password");
+
+        mockMvc.perform(
+                        post("/api/auth/register")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        objectMapper.writeValueAsString(
+                                                signupRequest
+                                        )
+                                )
+                )
+                .andExpect(status().isOk())
+                .andExpect(
+                        jsonPath("$.message")
+                                .value(
+                                        "User registered successfully!"
+                                )
+                );
+    }
+
+    @Test
+    void shouldFailWhenEmailAlreadyExists()
+            throws Exception {
+
+        SignupRequest signupRequest =
+                new SignupRequest();
+
+        signupRequest.setEmail("test@test.com");
+
+        signupRequest.setFirstName("John");
+
+        signupRequest.setLastName("Doe");
+
+        signupRequest.setPassword("password");
+
+        mockMvc.perform(
+                post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(
+                                objectMapper.writeValueAsString(
+                                        signupRequest
+                                )
+                        )
+        );
+
+        mockMvc.perform(
+                        post("/api/auth/register")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        objectMapper.writeValueAsString(
+                                                signupRequest
+                                        )
+                                )
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(
+                        jsonPath("$.message")
+                                .value(
+                                        "Error: Email is already taken!"
+                                )
+                );
+    }
+
+    @Test
+    void shouldFailWhenEmailIsInvalid()
+            throws Exception {
+
+        SignupRequest signupRequest =
+                new SignupRequest();
+
+        signupRequest.setEmail("invalid-email");
+
+        signupRequest.setFirstName("John");
+
+        signupRequest.setLastName("Doe");
+
+        signupRequest.setPassword("password");
+
+        mockMvc.perform(
+                        post("/api/auth/register")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        objectMapper.writeValueAsString(
+                                                signupRequest
+                                        )
+                                )
+                )
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void shouldFailWhenPasswordIsBlank()
+            throws Exception {
+
+        SignupRequest signupRequest =
+                new SignupRequest();
+
+        signupRequest.setEmail("test@test.com");
+
+        signupRequest.setFirstName("John");
+
+        signupRequest.setLastName("Doe");
+
+        signupRequest.setPassword("");
+
+        mockMvc.perform(
+                        post("/api/auth/register")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        objectMapper.writeValueAsString(
+                                                signupRequest
+                                        )
+                                )
+                )
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void shouldAuthenticateUser()
+            throws Exception {
+
+        LoginRequest loginRequest =
+                new LoginRequest();
+
+        loginRequest.setEmail("test@test.com");
+
+        loginRequest.setPassword("password");
+
+        mockMvc.perform(
+                        post("/api/auth/login")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        objectMapper.writeValueAsString(
+                                                loginRequest
+                                        )
+                                )
+                )
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void shouldFailLoginWhenEmailIsBlank()
+            throws Exception {
+
+        LoginRequest loginRequest =
+                new LoginRequest();
+
+        loginRequest.setEmail("");
+
+        loginRequest.setPassword("password");
+
+        mockMvc.perform(
+                        post("/api/auth/login")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        objectMapper.writeValueAsString(
+                                                loginRequest
+                                        )
+                                )
+                )
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void shouldFailLoginWhenPasswordIsBlank()
+            throws Exception {
+
+        LoginRequest loginRequest =
+                new LoginRequest();
+
+        loginRequest.setEmail("test@test.com");
+
+        loginRequest.setPassword("");
+
+        mockMvc.perform(
+                        post("/api/auth/login")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        objectMapper.writeValueAsString(
+                                                loginRequest
+                                        )
+                                )
+                )
+                .andExpect(status().isBadRequest());
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\test\java\com\openclassrooms\starterjwt\controllers\SessionControllerTest.java =====
+
+package com.openclassrooms.starterjwt.controllers;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.openclassrooms.starterjwt.dto.SessionDto;
+import com.openclassrooms.starterjwt.mapper.SessionMapper;
+import com.openclassrooms.starterjwt.models.Session;
+import com.openclassrooms.starterjwt.services.SessionService;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import org.mockito.Mockito;
+
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.when;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+class SessionControllerTest {
+
+    private MockMvc mockMvc;
+
+    private SessionService sessionService;
+
+    private SessionMapper sessionMapper;
+
+    private ObjectMapper objectMapper;
+
+    @BeforeEach
+    void setup() {
+
+        sessionService =
+                Mockito.mock(SessionService.class);
+
+        sessionMapper =
+                Mockito.mock(SessionMapper.class);
+
+        SessionController controller =
+                new SessionController(
+                        sessionService,
+                        sessionMapper
+                );
+
+        mockMvc =
+                MockMvcBuilders
+                        .standaloneSetup(controller)
+                        .build();
+
+        objectMapper =
+                new ObjectMapper();
+    }
+
+    @Test
+    void shouldFindById() throws Exception {
+
+        Session session =
+                Session.builder()
+                        .id(1L)
+                        .name("Yoga")
+                        .description("Description")
+                        .date(new Date())
+                        .build();
+
+        SessionDto dto =
+                new SessionDto();
+
+        dto.setId(1L);
+
+        dto.setName("Yoga");
+
+        dto.setDescription("Description");
+
+        when(sessionService.getById(1L))
+                .thenReturn(session);
+
+        when(sessionMapper.toDto(session))
+                .thenReturn(dto);
+
+        mockMvc.perform(get("/api/session/1"))
+                .andExpect(status().isOk())
+                .andExpect(
+                        jsonPath("$.name")
+                                .value("Yoga")
+                );
+    }
+
+    @Test
+    void shouldFindAll() throws Exception {
+
+        List<Session> sessions =
+                new ArrayList<>();
+
+        Session session =
+                Session.builder()
+                        .id(1L)
+                        .name("Yoga")
+                        .description("Description")
+                        .date(new Date())
+                        .build();
+
+        sessions.add(session);
+
+        List<SessionDto> dtos =
+                new ArrayList<>();
+
+        SessionDto dto =
+                new SessionDto();
+
+        dto.setId(1L);
+
+        dto.setName("Yoga");
+
+        dto.setDescription("Description");
+
+        dtos.add(dto);
+
+        when(sessionService.findAll())
+                .thenReturn(sessions);
+
+        when(sessionMapper.toDto(sessions))
+                .thenReturn(dtos);
+
+        mockMvc.perform(get("/api/session"))
+                .andExpect(status().isOk())
+                .andExpect(
+                        jsonPath("$[0].name")
+                                .value("Yoga")
+                );
+    }
+
+    @Test
+    void shouldCreateSession() throws Exception {
+
+        SessionDto dto =
+                new SessionDto();
+
+        dto.setName("Yoga");
+
+        dto.setDescription("Description");
+
+        dto.setDate(new Date());
+
+        dto.setTeacher_id(1L);
+
+        dto.setUsers(new ArrayList<>());
+
+        Session session =
+                Session.builder()
+                        .id(1L)
+                        .name("Yoga")
+                        .description("Description")
+                        .date(new Date())
+                        .build();
+
+        when(sessionMapper.toEntity(any(SessionDto.class)))
+                .thenReturn(session);
+
+        when(sessionService.create(any(Session.class)))
+                .thenReturn(session);
+
+        when(sessionMapper.toDto(session))
+                .thenReturn(dto);
+
+        mockMvc.perform(
+                        post("/api/session")
+                                .contentType(
+                                        MediaType.APPLICATION_JSON
+                                )
+                                .content(
+                                        objectMapper.writeValueAsString(dto)
+                                )
+                )
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void shouldDeleteSession() throws Exception {
+
+        doNothing()
+                .when(sessionService)
+                .delete(1L);
+
+        mockMvc.perform(delete("/api/session/1"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void shouldParticipate() throws Exception {
+
+        doNothing()
+                .when(sessionService)
+                .participate(1L, 1L);
+
+        mockMvc.perform(
+                        post("/api/session/1/participate/1")
+                )
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void shouldNoLongerParticipate() throws Exception {
+
+        doNothing()
+                .when(sessionService)
+                .noLongerParticipate(1L, 1L);
+
+        mockMvc.perform(
+                        delete("/api/session/1/participate/1")
+                )
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void shouldReturnBadRequestWhenUpdateIdIsInvalid()
+            throws Exception {
+
+        SessionDto dto =
+                new SessionDto();
+
+        dto.setName("Yoga");
+
+        mockMvc.perform(
+                        put("/api/session/abc")
+                                .contentType(
+                                        MediaType.APPLICATION_JSON
+                                )
+                                .content(
+                                        objectMapper.writeValueAsString(dto)
+                                )
+                )
+                .andExpect(status().isBadRequest());
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\test\java\com\openclassrooms\starterjwt\controllers\TeacherControllerTest.java =====
+
+package com.openclassrooms.starterjwt.controllers;
+
+import com.openclassrooms.starterjwt.models.Teacher;
+import com.openclassrooms.starterjwt.repository.TeacherRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.web.servlet.MockMvc;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+@SpringBootTest
+@AutoConfigureMockMvc
+@ActiveProfiles("test")
+class TeacherControllerTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private TeacherRepository teacherRepository;
+
+    private Long teacherId;
+
+    @BeforeEach
+    void setup() {
+
+        teacherRepository.deleteAll();
+
+        Teacher teacher = Teacher.builder()
+                .firstName("John")
+                .lastName("Doe")
+                .build();
+
+        teacherId = teacherRepository.save(teacher).getId();
+    }
+
+    @Test
+    @WithMockUser
+    void shouldFindAllTeachers() throws Exception {
+
+        mockMvc.perform(get("/api/teacher"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].firstName").value("John"));
+    }
+
+    @Test
+    @WithMockUser
+    void shouldFindTeacherById() throws Exception {
+
+        mockMvc.perform(get("/api/teacher/" + teacherId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.firstName").value("John"));
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\test\java\com\openclassrooms\starterjwt\controllers\UserControllerTest.java =====
+
+package com.openclassrooms.starterjwt.controllers;
+
+import com.openclassrooms.starterjwt.models.User;
+import com.openclassrooms.starterjwt.repository.UserRepository;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.test.context.support.WithMockUser;
+
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.web.servlet.MockMvc;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+@SpringBootTest
+@AutoConfigureMockMvc
+@ActiveProfiles("test")
+class UserControllerTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
+    private Long userId;
+
+    @BeforeEach
+    void setup() {
+
+        userRepository.deleteAll();
+
+        User user = User.builder()
+                .email("test@test.com")
+                .firstName("John")
+                .lastName("Doe")
+                .password(passwordEncoder.encode("password"))
+                .admin(false)
+                .build();
+
+        userId = userRepository.save(user).getId();
+    }
+
+    @Test
+    @WithMockUser(username = "test@test.com")
+    void shouldFindUserById() throws Exception {
+
+        mockMvc.perform(get("/api/user/" + userId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value("test@test.com"));
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\test\java\com\openclassrooms\starterjwt\dto\SessionDtoTest.java =====
+
+package com.openclassrooms.starterjwt.dto;
+
+import org.junit.jupiter.api.Test;
+
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class SessionDtoTest {
+
+    @Test
+    void shouldTestSettersAndGetters() {
+
+        LocalDateTime now = LocalDateTime.now();
+
+        SessionDto sessionDto = new SessionDto();
+
+        sessionDto.setId(1L);
+        sessionDto.setName("Yoga Session");
+        sessionDto.setDescription("Yoga description");
+        sessionDto.setTeacher_id(1L);
+
+        List<Long> users = new ArrayList<>();
+        users.add(1L);
+
+        sessionDto.setUsers(users);
+
+        sessionDto.setCreatedAt(now);
+        sessionDto.setUpdatedAt(now);
+
+        assertEquals(1L, sessionDto.getId());
+        assertEquals("Yoga Session", sessionDto.getName());
+        assertEquals("Yoga description", sessionDto.getDescription());
+        assertEquals(1L, sessionDto.getTeacher_id());
+
+        assertEquals(1, sessionDto.getUsers().size());
+
+        assertEquals(now, sessionDto.getCreatedAt());
+        assertEquals(now, sessionDto.getUpdatedAt());
+    }
+
+    @Test
+    void shouldTestEqualsAndHashCode() {
+
+        LocalDateTime now = LocalDateTime.now();
+
+        SessionDto session1 = new SessionDto();
+
+        session1.setId(1L);
+        session1.setName("Yoga Session");
+        session1.setDescription("Yoga description");
+        session1.setTeacher_id(1L);
+        session1.setUsers(new ArrayList<>());
+        session1.setCreatedAt(now);
+        session1.setUpdatedAt(now);
+
+        SessionDto session2 = new SessionDto();
+
+        session2.setId(1L);
+        session2.setName("Yoga Session");
+        session2.setDescription("Yoga description");
+        session2.setTeacher_id(1L);
+        session2.setUsers(new ArrayList<>());
+        session2.setCreatedAt(now);
+        session2.setUpdatedAt(now);
+
+        assertEquals(session1, session2);
+
+        assertEquals(session1.hashCode(), session2.hashCode());
+    }
+
+    @Test
+    void shouldTestNotEquals() {
+
+        SessionDto session1 = new SessionDto();
+        session1.setId(1L);
+
+        SessionDto session2 = new SessionDto();
+        session2.setId(2L);
+
+        assertNotEquals(session1, session2);
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\test\java\com\openclassrooms\starterjwt\dto\TeacherDtoTest.java =====
+
+package com.openclassrooms.starterjwt.dto;
+
+import org.junit.jupiter.api.Test;
+
+import java.time.LocalDateTime;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class TeacherDtoTest {
+
+    @Test
+    void shouldTestSettersAndGetters() {
+
+        LocalDateTime now = LocalDateTime.now();
+
+        TeacherDto teacherDto = new TeacherDto();
+
+        teacherDto.setId(1L);
+        teacherDto.setFirstName("John");
+        teacherDto.setLastName("Doe");
+        teacherDto.setCreatedAt(now);
+        teacherDto.setUpdatedAt(now);
+
+        assertEquals(1L, teacherDto.getId());
+        assertEquals("John", teacherDto.getFirstName());
+        assertEquals("Doe", teacherDto.getLastName());
+
+        assertEquals(now, teacherDto.getCreatedAt());
+        assertEquals(now, teacherDto.getUpdatedAt());
+    }
+
+    @Test
+    void shouldTestEqualsAndHashCode() {
+
+        LocalDateTime now = LocalDateTime.now();
+
+        TeacherDto teacher1 = new TeacherDto();
+
+        teacher1.setId(1L);
+        teacher1.setFirstName("John");
+        teacher1.setLastName("Doe");
+        teacher1.setCreatedAt(now);
+        teacher1.setUpdatedAt(now);
+
+        TeacherDto teacher2 = new TeacherDto();
+
+        teacher2.setId(1L);
+        teacher2.setFirstName("John");
+        teacher2.setLastName("Doe");
+        teacher2.setCreatedAt(now);
+        teacher2.setUpdatedAt(now);
+
+        assertEquals(teacher1, teacher2);
+
+        assertEquals(teacher1.hashCode(), teacher2.hashCode());
+    }
+
+    @Test
+    void shouldTestNotEquals() {
+
+        TeacherDto teacher1 = new TeacherDto();
+        teacher1.setId(1L);
+
+        TeacherDto teacher2 = new TeacherDto();
+        teacher2.setId(2L);
+
+        assertNotEquals(teacher1, teacher2);
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\test\java\com\openclassrooms\starterjwt\dto\UserDtoTest.java =====
+
+package com.openclassrooms.starterjwt.dto;
+
+import org.junit.jupiter.api.Test;
+
+import java.time.LocalDateTime;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class UserDtoTest {
+
+    @Test
+    void shouldTestSettersAndGetters() {
+
+        LocalDateTime now = LocalDateTime.now();
+
+        UserDto userDto = new UserDto();
+
+        userDto.setId(1L);
+        userDto.setEmail("test@test.com");
+        userDto.setFirstName("John");
+        userDto.setLastName("Doe");
+        userDto.setPassword("password");
+        userDto.setAdmin(false);
+        userDto.setCreatedAt(now);
+        userDto.setUpdatedAt(now);
+
+        assertEquals(1L, userDto.getId());
+        assertEquals("test@test.com", userDto.getEmail());
+        assertEquals("John", userDto.getFirstName());
+        assertEquals("Doe", userDto.getLastName());
+        assertEquals("password", userDto.getPassword());
+
+        assertFalse(userDto.isAdmin());
+
+        assertEquals(now, userDto.getCreatedAt());
+        assertEquals(now, userDto.getUpdatedAt());
+    }
+
+    @Test
+    void shouldTestEqualsAndHashCode() {
+
+        LocalDateTime now = LocalDateTime.now();
+
+        UserDto user1 = new UserDto();
+
+        user1.setId(1L);
+        user1.setEmail("test@test.com");
+        user1.setFirstName("John");
+        user1.setLastName("Doe");
+        user1.setPassword("password");
+        user1.setAdmin(false);
+        user1.setCreatedAt(now);
+        user1.setUpdatedAt(now);
+
+        UserDto user2 = new UserDto();
+
+        user2.setId(1L);
+        user2.setEmail("test@test.com");
+        user2.setFirstName("John");
+        user2.setLastName("Doe");
+        user2.setPassword("password");
+        user2.setAdmin(false);
+        user2.setCreatedAt(now);
+        user2.setUpdatedAt(now);
+
+        assertEquals(user1, user2);
+
+        assertEquals(user1.hashCode(), user2.hashCode());
+    }
+
+    @Test
+    void shouldTestNotEquals() {
+
+        UserDto user1 = new UserDto();
+        user1.setId(1L);
+
+        UserDto user2 = new UserDto();
+        user2.setId(2L);
+
+        assertNotEquals(user1, user2);
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\test\java\com\openclassrooms\starterjwt\mapper\SessionMapperTest.java =====
+
+package com.openclassrooms.starterjwt.mapper;
+
+import com.openclassrooms.starterjwt.dto.SessionDto;
+import com.openclassrooms.starterjwt.models.Session;
+import com.openclassrooms.starterjwt.models.Teacher;
+import com.openclassrooms.starterjwt.services.TeacherService;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import org.mapstruct.factory.Mappers;
+
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+class SessionMapperTest {
+
+    private SessionMapperImpl sessionMapper;
+
+    private TeacherService teacherService;
+
+    @BeforeEach
+    void setup() {
+
+        teacherService = mock(TeacherService.class);
+
+        sessionMapper = new SessionMapperImpl();
+
+        sessionMapper.teacherService = teacherService;
+    }
+
+    @Test
+    void shouldMapSessionToDto() {
+
+        Teacher teacher = Teacher.builder()
+                .id(1L)
+                .firstName("John")
+                .lastName("Doe")
+                .build();
+
+        Session session = Session.builder()
+                .id(1L)
+                .name("Yoga Session")
+                .description("Yoga description")
+                .teacher(teacher)
+                .users(new ArrayList<>())
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+
+        SessionDto dto = sessionMapper.toDto(session);
+
+        assertNotNull(dto);
+
+        assertEquals(session.getId(), dto.getId());
+        assertEquals(session.getName(), dto.getName());
+        assertEquals(session.getDescription(), dto.getDescription());
+        assertEquals(session.getTeacher().getId(), dto.getTeacher_id());
+    }
+
+    @Test
+    void shouldMapDtoToSession() {
+
+        Teacher teacher = Teacher.builder()
+                .id(1L)
+                .firstName("John")
+                .lastName("Doe")
+                .build();
+
+        when(teacherService.findById(1L))
+                .thenReturn(teacher);
+
+        SessionDto dto = new SessionDto();
+
+        dto.setId(1L);
+        dto.setName("Yoga Session");
+        dto.setDescription("Yoga description");
+        dto.setTeacher_id(1L);
+        dto.setUsers(new ArrayList<>());
+        dto.setCreatedAt(LocalDateTime.now());
+        dto.setUpdatedAt(LocalDateTime.now());
+
+        Session session = sessionMapper.toEntity(dto);
+
+        assertNotNull(session);
+
+        assertEquals(dto.getId(), session.getId());
+        assertEquals(dto.getName(), session.getName());
+        assertEquals(dto.getDescription(), session.getDescription());
+        assertEquals(dto.getTeacher_id(), session.getTeacher().getId());
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\test\java\com\openclassrooms\starterjwt\mapper\TeacherMapperTest.java =====
+
+package com.openclassrooms.starterjwt.mapper;
+
+import com.openclassrooms.starterjwt.dto.TeacherDto;
+import com.openclassrooms.starterjwt.models.Teacher;
+
+import org.junit.jupiter.api.Test;
+import org.mapstruct.factory.Mappers;
+
+import java.time.LocalDateTime;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class TeacherMapperTest {
+
+    private final TeacherMapper mapper =
+            Mappers.getMapper(TeacherMapper.class);
+
+    @Test
+    void shouldMapTeacherToDto() {
+
+        LocalDateTime now = LocalDateTime.now();
+
+        Teacher teacher = Teacher.builder()
+                .id(1L)
+                .firstName("John")
+                .lastName("Doe")
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+
+        TeacherDto dto = mapper.toDto(teacher);
+
+        assertNotNull(dto);
+
+        assertEquals(
+                teacher.getId(),
+                dto.getId()
+        );
+
+        assertEquals(
+                teacher.getFirstName(),
+                dto.getFirstName()
+        );
+
+        assertEquals(
+                teacher.getLastName(),
+                dto.getLastName()
+        );
+
+        assertEquals(
+                teacher.getCreatedAt(),
+                dto.getCreatedAt()
+        );
+
+        assertEquals(
+                teacher.getUpdatedAt(),
+                dto.getUpdatedAt()
+        );
+    }
+
+    @Test
+    void shouldMapDtoToTeacher() {
+
+        LocalDateTime now = LocalDateTime.now();
+
+        TeacherDto dto = new TeacherDto();
+
+        dto.setId(1L);
+
+        dto.setFirstName("John");
+
+        dto.setLastName("Doe");
+
+        dto.setCreatedAt(now);
+
+        dto.setUpdatedAt(now);
+
+        Teacher teacher = mapper.toEntity(dto);
+
+        assertNotNull(teacher);
+
+        assertEquals(
+                dto.getId(),
+                teacher.getId()
+        );
+
+        assertEquals(
+                dto.getFirstName(),
+                teacher.getFirstName()
+        );
+
+        assertEquals(
+                dto.getLastName(),
+                teacher.getLastName()
+        );
+
+        assertEquals(
+                dto.getCreatedAt(),
+                teacher.getCreatedAt()
+        );
+
+        assertEquals(
+                dto.getUpdatedAt(),
+                teacher.getUpdatedAt()
+        );
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\test\java\com\openclassrooms\starterjwt\mapper\UserMapperTest.java =====
+
+package com.openclassrooms.starterjwt.mapper;
+
+import com.openclassrooms.starterjwt.dto.UserDto;
+import com.openclassrooms.starterjwt.models.User;
+
+import org.junit.jupiter.api.Test;
+import org.mapstruct.factory.Mappers;
+
+import java.time.LocalDateTime;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class UserMapperTest {
+
+    private final UserMapper mapper =
+            Mappers.getMapper(UserMapper.class);
+
+    @Test
+    void shouldMapUserToDto() {
+
+        LocalDateTime now = LocalDateTime.now();
+
+        User user = User.builder()
+                .id(1L)
+                .email("test@test.com")
+                .firstName("John")
+                .lastName("Doe")
+                .password("password")
+                .admin(false)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+
+        UserDto dto = mapper.toDto(user);
+
+        assertNotNull(dto);
+
+        assertEquals(user.getId(), dto.getId());
+
+        assertEquals(user.getEmail(), dto.getEmail());
+
+        assertEquals(
+                user.getFirstName(),
+                dto.getFirstName()
+        );
+
+        assertEquals(
+                user.getLastName(),
+                dto.getLastName()
+        );
+
+        assertEquals(
+                user.isAdmin(),
+                dto.isAdmin()
+        );
+
+        assertEquals(
+                user.getCreatedAt(),
+                dto.getCreatedAt()
+        );
+
+        assertEquals(
+                user.getUpdatedAt(),
+                dto.getUpdatedAt()
+        );
+    }
+
+    @Test
+    void shouldMapDtoToUser() {
+
+        LocalDateTime now = LocalDateTime.now();
+
+        UserDto dto = new UserDto();
+        dto.setId(1L);
+        dto.setEmail("test@test.com");
+        dto.setFirstName("John");
+        dto.setLastName("Doe");
+        dto.setPassword("password");
+        dto.setAdmin(false);
+        dto.setCreatedAt(now);
+        dto.setUpdatedAt(now);
+
+        User user = mapper.toEntity(dto);
+
+        assertNotNull(user);
+
+        assertEquals(dto.getId(), user.getId());
+
+        assertEquals(dto.getEmail(), user.getEmail());
+
+        assertEquals(
+                dto.getFirstName(),
+                user.getFirstName()
+        );
+
+        assertEquals(
+                dto.getLastName(),
+                user.getLastName()
+        );
+
+        assertEquals(
+                dto.isAdmin(),
+                user.isAdmin()
+        );
+
+        assertEquals(
+                dto.getCreatedAt(),
+                user.getCreatedAt()
+        );
+
+        assertEquals(
+                dto.getUpdatedAt(),
+                user.getUpdatedAt()
+        );
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\test\java\com\openclassrooms\starterjwt\models\SessionTest.java =====
+
+package com.openclassrooms.starterjwt.models;
+
+import org.junit.jupiter.api.Test;
+
+import java.time.LocalDateTime;
+import java.util.Date;
+import java.util.ArrayList;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class SessionTest {
+
+    @Test
+    void shouldTestSettersAndGetters() {
+
+        LocalDateTime now = LocalDateTime.now();
+
+        Teacher teacher = new Teacher();
+        teacher.setId(1L);
+
+        List<User> users = new ArrayList<>();
+
+        User user = new User();
+        user.setId(1L);
+
+        users.add(user);
+
+        Session session = new Session();
+
+        session.setId(1L);
+        session.setName("Yoga Session");
+        session.setDescription("Yoga description");
+        session.setDate(new Date());
+
+        session.setTeacher(teacher);
+
+        session.setUsers(users);
+
+        session.setCreatedAt(now);
+        session.setUpdatedAt(now);
+
+        assertEquals(1L, session.getId());
+
+        assertEquals("Yoga Session", session.getName());
+
+        assertEquals("Yoga description", session.getDescription());
+
+        assertNotNull(session.getDate());
+
+        assertEquals(1L, session.getTeacher().getId());
+
+        assertEquals(1, session.getUsers().size());
+
+        assertEquals(now, session.getCreatedAt());
+
+        assertEquals(now, session.getUpdatedAt());
+    }
+
+    @Test
+    void shouldTestEqualsAndHashCode() {
+
+        LocalDateTime now = LocalDateTime.now();
+
+        Session session1 = new Session();
+
+        session1.setId(1L);
+        session1.setName("Yoga Session");
+        session1.setDescription("Yoga description");
+        session1.setDate(new Date());
+
+        session1.setCreatedAt(now);
+        session1.setUpdatedAt(now);
+
+        Session session2 = new Session();
+
+        session2.setId(1L);
+        session2.setName("Yoga Session");
+        session2.setDescription("Yoga description");
+        session2.setDate(new Date());
+
+        session2.setCreatedAt(now);
+        session2.setUpdatedAt(now);
+
+        assertEquals(session1, session2);
+
+        assertEquals(session1.hashCode(), session2.hashCode());
+    }
+
+    @Test
+    void shouldTestNotEquals() {
+
+        Session session1 = new Session();
+        session1.setId(1L);
+
+        Session session2 = new Session();
+        session2.setId(2L);
+
+        assertNotEquals(session1, session2);
+    }
+
+    @Test
+    void shouldTestBuilder() {
+
+        LocalDateTime now = LocalDateTime.now();
+
+        Teacher teacher = new Teacher();
+        teacher.setId(1L);
+
+        List<User> users = new ArrayList<>();
+
+        User user = new User();
+        user.setId(1L);
+
+        users.add(user);
+
+        Session session = Session.builder()
+                .id(1L)
+                .name("Yoga Session")
+                .description("Yoga description")
+                .date(new Date())
+                .teacher(teacher)
+                .users(users)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+
+        assertNotNull(session);
+
+        assertEquals(1L, session.getId());
+
+        assertEquals("Yoga Session", session.getName());
+
+        assertEquals("Yoga description", session.getDescription());
+
+        assertNotNull(session.getDate());
+
+        assertEquals(1L, session.getTeacher().getId());
+
+        assertEquals(1, session.getUsers().size());
+
+        assertEquals(now, session.getCreatedAt());
+
+        assertEquals(now, session.getUpdatedAt());
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\test\java\com\openclassrooms\starterjwt\models\TeacherTest.java =====
+
+package com.openclassrooms.starterjwt.models;
+
+import org.junit.jupiter.api.Test;
+
+import java.time.LocalDateTime;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class TeacherTest {
+
+    @Test
+    void shouldTestSettersAndGetters() {
+
+        LocalDateTime now = LocalDateTime.now();
+
+        Teacher teacher = new Teacher();
+
+        teacher.setId(1L);
+
+        teacher.setFirstName("John");
+
+        teacher.setLastName("Doe");
+
+        teacher.setCreatedAt(now);
+
+        teacher.setUpdatedAt(now);
+
+        assertEquals(1L, teacher.getId());
+
+        assertEquals("John", teacher.getFirstName());
+
+        assertEquals("Doe", teacher.getLastName());
+
+        assertEquals(now, teacher.getCreatedAt());
+
+        assertEquals(now, teacher.getUpdatedAt());
+    }
+
+    @Test
+    void shouldTestEqualsAndHashCode() {
+
+        LocalDateTime now = LocalDateTime.now();
+
+        Teacher teacher1 = new Teacher();
+
+        teacher1.setId(1L);
+
+        teacher1.setFirstName("John");
+
+        teacher1.setLastName("Doe");
+
+        teacher1.setCreatedAt(now);
+
+        teacher1.setUpdatedAt(now);
+
+        Teacher teacher2 = new Teacher();
+
+        teacher2.setId(1L);
+
+        teacher2.setFirstName("John");
+
+        teacher2.setLastName("Doe");
+
+        teacher2.setCreatedAt(now);
+
+        teacher2.setUpdatedAt(now);
+
+        assertEquals(teacher1, teacher2);
+
+        assertEquals(
+                teacher1.hashCode(),
+                teacher2.hashCode()
+        );
+    }
+
+    @Test
+    void shouldTestNotEquals() {
+
+        Teacher teacher1 = new Teacher();
+
+        teacher1.setId(1L);
+
+        Teacher teacher2 = new Teacher();
+
+        teacher2.setId(2L);
+
+        assertNotEquals(teacher1, teacher2);
+    }
+
+    @Test
+    void shouldTestBuilder() {
+
+        LocalDateTime now = LocalDateTime.now();
+
+        Teacher teacher = Teacher.builder()
+                .id(1L)
+                .firstName("John")
+                .lastName("Doe")
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+
+        assertNotNull(teacher);
+
+        assertEquals(1L, teacher.getId());
+
+        assertEquals("John", teacher.getFirstName());
+
+        assertEquals("Doe", teacher.getLastName());
+
+        assertEquals(now, teacher.getCreatedAt());
+
+        assertEquals(now, teacher.getUpdatedAt());
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\test\java\com\openclassrooms\starterjwt\models\UserTest.java =====
+
+package com.openclassrooms.starterjwt.models;
+
+import org.junit.jupiter.api.Test;
+
+import java.time.LocalDateTime;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class UserTest {
+
+    @Test
+    void shouldTestSettersAndGetters() {
+
+        LocalDateTime now = LocalDateTime.now();
+
+        User user = new User();
+
+        user.setId(1L);
+        user.setEmail("test@test.com");
+        user.setFirstName("John");
+        user.setLastName("Doe");
+        user.setPassword("password");
+        user.setAdmin(false);
+        user.setCreatedAt(now);
+        user.setUpdatedAt(now);
+
+        assertEquals(1L, user.getId());
+
+        assertEquals("test@test.com", user.getEmail());
+
+        assertEquals("John", user.getFirstName());
+
+        assertEquals("Doe", user.getLastName());
+
+        assertEquals("password", user.getPassword());
+
+        assertFalse(user.isAdmin());
+
+        assertEquals(now, user.getCreatedAt());
+
+        assertEquals(now, user.getUpdatedAt());
+    }
+
+    @Test
+    void shouldTestEqualsAndHashCode() {
+
+        LocalDateTime now = LocalDateTime.now();
+
+        User user1 = new User();
+
+        user1.setId(1L);
+        user1.setEmail("test@test.com");
+        user1.setFirstName("John");
+        user1.setLastName("Doe");
+        user1.setPassword("password");
+        user1.setAdmin(false);
+        user1.setCreatedAt(now);
+        user1.setUpdatedAt(now);
+
+        User user2 = new User();
+
+        user2.setId(1L);
+        user2.setEmail("test@test.com");
+        user2.setFirstName("John");
+        user2.setLastName("Doe");
+        user2.setPassword("password");
+        user2.setAdmin(false);
+        user2.setCreatedAt(now);
+        user2.setUpdatedAt(now);
+
+        assertEquals(user1, user2);
+
+        assertEquals(user1.hashCode(), user2.hashCode());
+    }
+
+    @Test
+    void shouldTestNotEquals() {
+
+        User user1 = new User();
+        user1.setId(1L);
+
+        User user2 = new User();
+        user2.setId(2L);
+
+        assertNotEquals(user1, user2);
+    }
+
+    @Test
+    void shouldTestBuilder() {
+
+        LocalDateTime now = LocalDateTime.now();
+
+        User user = User.builder()
+                .id(1L)
+                .email("test@test.com")
+                .firstName("John")
+                .lastName("Doe")
+                .password("password")
+                .admin(false)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+
+        assertNotNull(user);
+
+        assertEquals(1L, user.getId());
+
+        assertEquals("test@test.com", user.getEmail());
+
+        assertEquals("John", user.getFirstName());
+
+        assertEquals("Doe", user.getLastName());
+
+        assertEquals("password", user.getPassword());
+
+        assertFalse(user.isAdmin());
+
+        assertEquals(now, user.getCreatedAt());
+
+        assertEquals(now, user.getUpdatedAt());
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\test\java\com\openclassrooms\starterjwt\payload\request\LoginRequestTest.java =====
+
+package com.openclassrooms.starterjwt.payload.request;
+
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class LoginRequestTest {
+
+    @Test
+    void shouldTestSettersAndGetters() {
+
+        LoginRequest request =
+                new LoginRequest();
+
+        request.setEmail("test@test.com");
+
+        request.setPassword("password");
+
+        assertEquals(
+                "test@test.com",
+                request.getEmail()
+        );
+
+        assertEquals(
+                "password",
+                request.getPassword()
+        );
+    }
+
+    @Test
+    void shouldCreateDifferentLoginRequest() {
+
+        LoginRequest request =
+                new LoginRequest();
+
+        request.setEmail("admin@test.com");
+
+        request.setPassword("admin123");
+
+        assertNotNull(request);
+
+        assertTrue(
+                request.getEmail().contains("@")
+        );
+
+        assertEquals(
+                "admin123",
+                request.getPassword()
+        );
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\test\java\com\openclassrooms\starterjwt\payload\request\SignupRequestTest.java =====
+
+package com.openclassrooms.starterjwt.payload.request;
+
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class SignupRequestTest {
+
+    @Test
+    void shouldTestSettersAndGetters() {
+
+        SignupRequest request =
+                new SignupRequest();
+
+        request.setEmail("test@test.com");
+
+        request.setFirstName("John");
+
+        request.setLastName("Doe");
+
+        request.setPassword("password");
+
+        assertEquals(
+                "test@test.com",
+                request.getEmail()
+        );
+
+        assertEquals(
+                "John",
+                request.getFirstName()
+        );
+
+        assertEquals(
+                "Doe",
+                request.getLastName()
+        );
+
+        assertEquals(
+                "password",
+                request.getPassword()
+        );
+    }
+
+    @Test
+    void shouldCreateDifferentSignupRequest() {
+
+        SignupRequest request =
+                new SignupRequest();
+
+        request.setEmail("admin@test.com");
+
+        request.setFirstName("Admin");
+
+        request.setLastName("User");
+
+        request.setPassword("admin123");
+
+        assertNotNull(request);
+
+        assertTrue(
+                request.getEmail().contains("@")
+        );
+
+        assertEquals(
+                "Admin",
+                request.getFirstName()
+        );
+
+        assertEquals(
+                "User",
+                request.getLastName()
+        );
+
+        assertEquals(
+                "admin123",
+                request.getPassword()
+        );
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\test\java\com\openclassrooms\starterjwt\payload\response\JwtResponseTest.java =====
+
+package com.openclassrooms.starterjwt.payload.response;
+
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class JwtResponseTest {
+
+    @Test
+    void shouldTestConstructorAndGetters() {
+
+        JwtResponse response =
+                new JwtResponse(
+                        "token",
+                        1L,
+                        "test@test.com",
+                        "John",
+                        "Doe",
+                        false
+                );
+
+        assertNotNull(response);
+
+        assertEquals(
+                "token",
+                response.getToken()
+        );
+
+        assertEquals(
+                "Bearer",
+                response.getType()
+        );
+
+        assertEquals(
+                1L,
+                response.getId()
+        );
+
+        assertEquals(
+                "test@test.com",
+                response.getUsername()
+        );
+
+        assertEquals(
+                "John",
+                response.getFirstName()
+        );
+
+        assertEquals(
+                "Doe",
+                response.getLastName()
+        );
+
+        assertFalse(
+                response.getAdmin()
+        );
+    }
+
+    @Test
+    void shouldTestSetters() {
+
+        JwtResponse response =
+                new JwtResponse(
+                        "token",
+                        1L,
+                        "test@test.com",
+                        "John",
+                        "Doe",
+                        false
+                );
+
+        response.setToken("newToken");
+
+        response.setType("Bearer");
+
+        response.setId(2L);
+
+        response.setUsername("new@test.com");
+
+        response.setFirstName("Jane");
+
+        response.setLastName("Smith");
+
+        response.setAdmin(true);
+
+        assertEquals(
+                "newToken",
+                response.getToken()
+        );
+
+        assertEquals(
+                "Bearer",
+                response.getType()
+        );
+
+        assertEquals(
+                2L,
+                response.getId()
+        );
+
+        assertEquals(
+                "new@test.com",
+                response.getUsername()
+        );
+
+        assertEquals(
+                "Jane",
+                response.getFirstName()
+        );
+
+        assertEquals(
+                "Smith",
+                response.getLastName()
+        );
+
+        assertTrue(
+                response.getAdmin()
+        );
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\test\java\com\openclassrooms\starterjwt\payload\response\MessageResponseTest.java =====
+
+package com.openclassrooms.starterjwt.payload.response;
+
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class MessageResponseTest {
+
+    @Test
+    void shouldTestConstructorAndGetter() {
+
+        MessageResponse response =
+                new MessageResponse(
+                        "Message de test"
+                );
+
+        assertNotNull(response);
+
+        assertEquals(
+                "Message de test",
+                response.getMessage()
+        );
+    }
+
+    @Test
+    void shouldTestSetter() {
+
+        MessageResponse response =
+                new MessageResponse(
+                        "Initial message"
+                );
+
+        response.setMessage(
+                "Updated message"
+        );
+
+        assertEquals(
+                "Updated message",
+                response.getMessage()
+        );
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\test\java\com\openclassrooms\starterjwt\security\jwt\JwtUtilsTest.java =====
+
+package com.openclassrooms.starterjwt.security.jwt;
+
+import com.openclassrooms.starterjwt.security.services.UserDetailsImpl;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+
+import java.util.ArrayList;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class JwtUtilsTest {
+
+    private JwtUtils jwtUtils;
+
+    @BeforeEach
+    void setup() {
+
+        jwtUtils = new JwtUtils();
+
+        jwtUtils.setJwtSecret("openclassroomsSecretKeyopenclassroomsSecretKeyopenclassroomsSecretKeyopenclassroomsSecretKey");
+        jwtUtils.setJwtExpirationMs(86400000);
+    }
+
+    @Test
+    void shouldGenerateJwtToken() {
+
+        UserDetailsImpl userDetails = new UserDetailsImpl(
+                1L,
+                "test@test.com",
+                "John",
+                "Doe",
+                false,
+                "password"
+        );
+
+        Authentication authentication =
+                new UsernamePasswordAuthenticationToken(
+                        userDetails,
+                        null,
+                        new ArrayList<>()
+                );
+
+        String token = jwtUtils.generateJwtToken(authentication);
+
+        assertNotNull(token);
+        assertFalse(token.isEmpty());
+    }
+
+    @Test
+    void shouldGetUserNameFromJwtToken() {
+
+        UserDetailsImpl userDetails = new UserDetailsImpl(
+                1L,
+                "test@test.com",
+                "John",
+                "Doe",
+                false,
+                "password"
+        );
+
+        Authentication authentication =
+                new UsernamePasswordAuthenticationToken(
+                        userDetails,
+                        null,
+                        new ArrayList<>()
+                );
+
+        String token = jwtUtils.generateJwtToken(authentication);
+
+        String username = jwtUtils.getUserNameFromJwtToken(token);
+
+        assertEquals("test@test.com", username);
+    }
+
+    @Test
+    void shouldValidateJwtToken() {
+
+        UserDetailsImpl userDetails = new UserDetailsImpl(
+                1L,
+                "test@test.com",
+                "John",
+                "Doe",
+                false,
+                "password"
+        );
+
+        Authentication authentication =
+                new UsernamePasswordAuthenticationToken(
+                        userDetails,
+                        null,
+                        new ArrayList<>()
+                );
+
+        String token = jwtUtils.generateJwtToken(authentication);
+
+        boolean isValid = jwtUtils.validateJwtToken(token);
+
+        assertTrue(isValid);
+    }
+
+    @Test
+    void shouldReturnFalseForInvalidJwtToken() {
+
+        boolean isValid =
+                jwtUtils.validateJwtToken("invalid-token");
+
+        assertFalse(isValid);
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\test\java\com\openclassrooms\starterjwt\security\services\UserDetailsImplTest.java =====
+
+package com.openclassrooms.starterjwt.security.services;
+
+import org.junit.jupiter.api.Test;
+
+import java.util.ArrayList;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class UserDetailsImplTest {
+
+    @Test
+    void shouldTestConstructorAndGetters() {
+
+        UserDetailsImpl userDetails =
+                new UserDetailsImpl(
+                        1L,
+                        "test@test.com",
+                        "John",
+                        "Doe",
+                        false,
+                        "password"
+                );
+
+        assertNotNull(userDetails);
+
+        assertEquals(1L, userDetails.getId());
+
+        assertEquals(
+                "test@test.com",
+                userDetails.getUsername()
+        );
+
+        assertEquals(
+                "password",
+                userDetails.getPassword()
+        );
+    }
+
+    @Test
+    void shouldReturnAuthorities() {
+
+        UserDetailsImpl userDetails =
+                new UserDetailsImpl(
+                        1L,
+                        "test@test.com",
+                        "John",
+                        "Doe",
+                        false,
+                        "password"
+                );
+
+        assertNotNull(
+                userDetails.getAuthorities()
+        );
+
+        assertTrue(
+                userDetails.getAuthorities().isEmpty()
+        );
+    }
+
+    @Test
+    void shouldReturnTrueForAccountStatusMethods() {
+
+        UserDetailsImpl userDetails =
+                new UserDetailsImpl(
+                        1L,
+                        "test@test.com",
+                        "John",
+                        "Doe",
+                        false,
+                        "password"
+                );
+
+        assertTrue(
+                userDetails.isAccountNonExpired()
+        );
+
+        assertTrue(
+                userDetails.isAccountNonLocked()
+        );
+
+        assertTrue(
+                userDetails.isCredentialsNonExpired()
+        );
+
+        assertTrue(
+                userDetails.isEnabled()
+        );
+    }
+
+    @Test
+    void shouldTestEquals() {
+
+        UserDetailsImpl user1 =
+                new UserDetailsImpl(
+                        1L,
+                        "test@test.com",
+                        "John",
+                        "Doe",
+                        false,
+                        "password"
+                );
+
+        UserDetailsImpl user2 =
+                new UserDetailsImpl(
+                        1L,
+                        "test@test.com",
+                        "John",
+                        "Doe",
+                        false,
+                        "password"
+                );
+
+        assertEquals(user1, user2);
+    }
+
+    @Test
+    void shouldTestNotEquals() {
+
+        UserDetailsImpl user1 =
+                new UserDetailsImpl(
+                        1L,
+                        "test@test.com",
+                        "John",
+                        "Doe",
+                        false,
+                        "password"
+                );
+
+        UserDetailsImpl user2 =
+                new UserDetailsImpl(
+                        2L,
+                        "other@test.com",
+                        "Jane",
+                        "Smith",
+                        false,
+                        "password"
+                );
+
+        assertNotEquals(user1, user2);
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\test\java\com\openclassrooms\starterjwt\services\SessionServiceTest.java =====
+
+package com.openclassrooms.starterjwt.services;
+
+import com.openclassrooms.starterjwt.exception.BadRequestException;
+import com.openclassrooms.starterjwt.exception.NotFoundException;
+import com.openclassrooms.starterjwt.models.Session;
+import com.openclassrooms.starterjwt.models.User;
+import com.openclassrooms.starterjwt.repository.SessionRepository;
+import com.openclassrooms.starterjwt.repository.UserRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class SessionServiceTest {
+
+    @Mock
+    private SessionRepository sessionRepository;
+
+    @Mock
+    private UserRepository userRepository;
+
+    @InjectMocks
+    private SessionService sessionService;
+
+    private Session session;
+    private User user;
+
+    @BeforeEach
+    void setup() {
+        user = User.builder()
+                .id(1L)
+                .email("test@test.com")
+                .firstName("John")
+                .lastName("Doe")
+                .password("password")
+                .admin(false)
+                .build();
+
+        session = Session.builder()
+                .id(1L)
+                .name("Yoga")
+                .users(new ArrayList<>())
+                .build();
+    }
+
+    @Test
+    void shouldCreateSession() {
+        when(sessionRepository.save(session)).thenReturn(session);
+
+        Session result = sessionService.create(session);
+
+        assertNotNull(result);
+        assertEquals("Yoga", result.getName());
+
+        verify(sessionRepository).save(session);
+    }
+
+    @Test
+    void shouldFindSessionById() {
+        when(sessionRepository.findById(1L))
+                .thenReturn(Optional.of(session));
+
+        Session result = sessionService.getById(1L);
+
+        assertEquals(1L, result.getId());
+    }
+
+    @Test
+    void shouldThrowNotFoundWhenSessionDoesNotExist() {
+        when(sessionRepository.findById(1L))
+                .thenReturn(Optional.empty());
+
+        assertThrows(NotFoundException.class,
+                () -> sessionService.getById(1L));
+    }
+
+    @Test
+    void shouldParticipateToSession() {
+        when(sessionRepository.findById(1L))
+                .thenReturn(Optional.of(session));
+
+        when(userRepository.findById(1L))
+                .thenReturn(Optional.of(user));
+
+        sessionService.participate(1L, 1L);
+
+        assertEquals(1, session.getUsers().size());
+
+        verify(sessionRepository).save(session);
+    }
+
+    @Test
+    void shouldThrowBadRequestWhenAlreadyParticipating() {
+        session.setUsers(List.of(user));
+
+        when(sessionRepository.findById(1L))
+                .thenReturn(Optional.of(session));
+
+        when(userRepository.findById(1L))
+                .thenReturn(Optional.of(user));
+
+        assertThrows(BadRequestException.class,
+                () -> sessionService.participate(1L, 1L));
+    }
+
+    @Test
+    void shouldRemoveParticipant() {
+        session.setUsers(new ArrayList<>(List.of(user)));
+
+        when(sessionRepository.findById(1L))
+                .thenReturn(Optional.of(session));
+
+        sessionService.noLongerParticipate(1L, 1L);
+
+        assertTrue(session.getUsers().isEmpty());
+
+        verify(sessionRepository).save(session);
+    }
+
+    @Test
+    void shouldThrowBadRequestWhenUserNotParticipating() {
+        when(sessionRepository.findById(1L))
+                .thenReturn(Optional.of(session));
+
+        assertThrows(BadRequestException.class,
+                () -> sessionService.noLongerParticipate(1L, 1L));
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\test\java\com\openclassrooms\starterjwt\services\TeacherServiceTest.java =====
+
+package com.openclassrooms.starterjwt.services;
+
+import com.openclassrooms.starterjwt.models.Teacher;
+import com.openclassrooms.starterjwt.repository.TeacherRepository;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.List;
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class TeacherServiceTest {
+
+    @Mock
+    private TeacherRepository teacherRepository;
+
+    @InjectMocks
+    private TeacherService teacherService;
+
+    @Test
+    void shouldFindAllTeachers() {
+        when(teacherRepository.findAll())
+                .thenReturn(List.of(new Teacher()));
+
+        List<Teacher> result = teacherService.findAll();
+
+        assertEquals(1, result.size());
+    }
+
+    @Test
+    void shouldFindTeacherById() {
+        Teacher teacher = Teacher.builder()
+                .id(1L)
+                .firstName("John")
+                .lastName("Doe")
+                .build();
+
+        when(teacherRepository.findById(1L))
+                .thenReturn(Optional.of(teacher));
+
+        Teacher result = teacherService.findById(1L);
+
+        assertEquals("John", result.getFirstName());
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\test\java\com\openclassrooms\starterjwt\services\UserServiceTest.java =====
+
+package com.openclassrooms.starterjwt.services;
+
+import com.openclassrooms.starterjwt.exception.UnauthorizedException;
+import com.openclassrooms.starterjwt.models.User;
+import com.openclassrooms.starterjwt.repository.UserRepository;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+
+import java.util.ArrayList;
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class UserServiceTest {
+
+    @Mock
+    private UserRepository userRepository;
+
+    @InjectMocks
+    private UserService userService;
+
+    @Test
+    void shouldDeleteUser() {
+
+        User dbUser = User.builder()
+                .id(1L)
+                .email("test@test.com")
+                .firstName("John")
+                .lastName("Doe")
+                .password("password")
+                .admin(false)
+                .build();
+
+        when(userRepository.findById(1L))
+                .thenReturn(Optional.of(dbUser));
+
+        org.springframework.security.core.userdetails.User securityUser =
+                new org.springframework.security.core.userdetails.User(
+                        "test@test.com",
+                        "password",
+                        new ArrayList<>()
+                );
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        securityUser,
+                        null,
+                        securityUser.getAuthorities()
+                )
+        );
+
+        userService.delete(1L);
+
+        verify(userRepository).delete(dbUser);
+    }
+
+    @Test
+    void shouldThrowUnauthorizedException() {
+
+        User dbUser = User.builder()
+                .id(1L)
+                .email("other@test.com")
+                .firstName("John")
+                .lastName("Doe")
+                .password("password")
+                .admin(false)
+                .build();
+
+        when(userRepository.findById(1L))
+                .thenReturn(Optional.of(dbUser));
+
+        org.springframework.security.core.userdetails.User securityUser =
+                new org.springframework.security.core.userdetails.User(
+                        "test@test.com",
+                        "password",
+                        new ArrayList<>()
+                );
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        securityUser,
+                        null,
+                        securityUser.getAuthorities()
+                )
+        );
+
+        assertThrows(
+                UnauthorizedException.class,
+                () -> userService.delete(1L)
+        );
+    }
+}
+
+
+===== D:\data\IntellijiHome\IdeaProjects\MyOc2P4_Studio_Yoga\back\src\test\resources\application-test.properties =====
+
+spring.datasource.url=jdbc:h2:mem:testdb
+spring.datasource.driverClassName=org.h2.Driver
+spring.datasource.username=sa
+spring.datasource.password=
+
+spring.jpa.database-platform=org.hibernate.dialect.H2Dialect
+spring.jpa.hibernate.ddl-auto=create-drop
+
+spring.jpa.show-sql=true
+
+oc.app.jwtSecret=testSecretKeytestSecretKeytestSecretKey
+oc.app.jwtExpirationMs=86400000

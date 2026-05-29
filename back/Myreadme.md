@@ -33,3 +33,7 @@
 # dev4
 - Les traitements métiers déportés dans les classes de service métier
   Refactor : SessionController, SessionService
+
+# dev5
+- Implémentation des tests :
+![Jacoco_couverture_code.png](pictures/Jacoco_couverture_code.png)
