@@ -151,9 +151,22 @@
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
             <plugin>
+
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
                 <version>0.8.12</version>
+
+                <configuration>
+                    <excludes>
+
+                        <exclude>**/dto/**</exclude>
+                        <exclude>**/payload/**</exclude>
+                        <exclude>**/*MapperImpl.class</exclude>
+                        <exclude>**/*Application.class</exclude>
+
+                    </excludes>
+                </configuration>
+
                 <executions>
                     <execution>
                         <goals>

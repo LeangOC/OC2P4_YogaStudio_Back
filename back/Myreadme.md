@@ -39,5 +39,11 @@
 ![Jacoco_couverture_code.png](pictures/Jacoco_couverture_code.png)
 
 # dev6
-Amélioration Test
+Amélioration Test  
 ![Jacoco_dev6.png](pictures/Jacoco_dev6.png)
+
+# dev7
+Exlusion des tests tout élément DTO et la classe principale
+Refactor : pom.xml
+
+![Jacoco_NoDto_dev7.png](pictures/Jacoco_NoDto_dev7.png)
