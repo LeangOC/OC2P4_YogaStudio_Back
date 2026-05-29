@@ -37,3 +37,7 @@
 # dev5
 - Implémentation des tests :
 ![Jacoco_couverture_code.png](pictures/Jacoco_couverture_code.png)
+
+# dev6
+Amélioration Test
+![Jacoco_dev6.png](pictures/Jacoco_dev6.png)

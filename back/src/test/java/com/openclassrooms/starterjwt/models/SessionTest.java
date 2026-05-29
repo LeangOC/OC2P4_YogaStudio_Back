@@ -143,4 +143,131 @@ class SessionTest {
 
         assertEquals(now, session.getUpdatedAt());
     }
+
+    @Test
+    void shouldTestEqualsWithSameObject() {
+
+        Session session = new Session();
+
+        session.setId(1L);
+
+        assertEquals(session, session);
+    }
+
+    @Test
+    void shouldTestEqualsWithNull() {
+
+        Session session = new Session();
+
+        session.setId(1L);
+
+        assertNotEquals(null, session);
+    }
+
+    @Test
+    void shouldTestEqualsWithDifferentClass() {
+
+        Session session = new Session();
+
+        session.setId(1L);
+
+        assertNotEquals(session, "session");
+    }
+
+    @Test
+    void shouldTestEqualsWithNullIds() {
+
+        Session session1 = new Session();
+
+        Session session2 = new Session();
+
+        assertEquals(session1, session2);
+    }
+
+    @Test
+    void shouldTestEqualsWithOneNullId() {
+
+        Session session1 = new Session();
+
+        session1.setId(1L);
+
+        Session session2 = new Session();
+
+        assertNotEquals(session1, session2);
+    }
+
+    @Test
+    void shouldTestHashCodeWithNullId() {
+
+        Session session = new Session();
+
+        int hashCode = session.hashCode();
+
+        assertNotEquals(0, hashCode);
+    }
+
+    @Test
+    void shouldTestHashCodeWithId() {
+
+        Session session = new Session();
+
+        session.setId(1L);
+
+        int hashCode = session.hashCode();
+
+        assertNotEquals(0, hashCode);
+    }
+
+    @Test
+    void shouldTestEqualsWithDifferentFieldsButSameId() {
+
+        Session session1 = new Session();
+
+        session1.setId(1L);
+        session1.setName("Yoga");
+        session1.setDescription("Description 1");
+        session1.setDate(new Date());
+
+        Session session2 = new Session();
+
+        session2.setId(1L);
+        session2.setName("Pilates");
+        session2.setDescription("Description 2");
+        session2.setDate(new Date());
+
+        assertEquals(session1, session2);
+    }
+
+    @Test
+    void shouldTestToString() {
+
+        Session session = new Session();
+
+        session.setId(1L);
+        session.setName("Yoga Session");
+        session.setDescription("Yoga description");
+        session.setDate(new Date());
+
+        String result = session.toString();
+
+        assertNotNull(result);
+
+        assertTrue(result.contains("Yoga Session"));
+        assertTrue(result.contains("Yoga description"));
+    }
+
+    @Test
+    void shouldTestChainableSetters() {
+
+        Session session = new Session()
+                .setId(1L)
+                .setName("Yoga Session")
+                .setDescription("Description")
+                .setDate(new Date());
+
+        assertEquals(1L, session.getId());
+        assertEquals("Yoga Session", session.getName());
+        assertEquals("Description", session.getDescription());
+        assertNotNull(session.getDate());
+    }
 }

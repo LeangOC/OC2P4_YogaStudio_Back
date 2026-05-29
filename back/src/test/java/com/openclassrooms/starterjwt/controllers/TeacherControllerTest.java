@@ -57,4 +57,20 @@ class TeacherControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.firstName").value("John"));
     }
+
+    @Test
+    @WithMockUser
+    void shouldReturnNotFoundWhenTeacherDoesNotExist() throws Exception {
+
+        mockMvc.perform(get("/api/teacher/999"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @WithMockUser
+    void shouldReturnBadRequestWhenIdIsInvalid() throws Exception {
+
+        mockMvc.perform(get("/api/teacher/abc"))
+                .andExpect(status().isBadRequest());
+    }
 }

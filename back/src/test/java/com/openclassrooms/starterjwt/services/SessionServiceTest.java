@@ -135,4 +135,96 @@ class SessionServiceTest {
         assertThrows(BadRequestException.class,
                 () -> sessionService.noLongerParticipate(1L, 1L));
     }
+
+// ajout
+@Test
+void shouldDeleteSession() {
+
+    when(sessionRepository.findById(1L))
+            .thenReturn(Optional.of(session));
+
+    sessionService.delete(1L);
+
+    verify(sessionRepository)
+            .delete(session);
+}
+    @Test
+    void shouldFindAllSessions() {
+
+        List<Session> sessions =
+                List.of(session);
+
+        when(sessionRepository.findAll())
+                .thenReturn(sessions);
+
+        List<Session> result =
+                sessionService.findAll();
+
+        assertEquals(1, result.size());
+
+        verify(sessionRepository)
+                .findAll();
+    }
+
+    @Test
+    void shouldUpdateSession() {
+
+        Session updatedSession =
+                Session.builder()
+                        .name("Pilates")
+                        .users(new ArrayList<>())
+                        .build();
+
+        when(sessionRepository.save(any(Session.class)))
+                .thenReturn(updatedSession);
+
+        Session result =
+                sessionService.update(
+                        1L,
+                        updatedSession
+                );
+
+        assertEquals(
+                "Pilates",
+                result.getName()
+        );
+
+        assertEquals(
+                1L,
+                updatedSession.getId()
+        );
+
+        verify(sessionRepository)
+                .save(updatedSession);
+    }
+
+    @Test
+    void shouldThrowNotFoundWhenParticipatingUserDoesNotExist() {
+
+        when(sessionRepository.findById(1L))
+                .thenReturn(Optional.of(session));
+
+        when(userRepository.findById(1L))
+                .thenReturn(Optional.empty());
+
+        assertThrows(
+                NotFoundException.class,
+                () -> sessionService.participate(1L, 1L)
+        );
+    }
+
+    @Test
+    void shouldThrowNotFoundWhenRemovingParticipationFromUnknownSession() {
+
+        when(sessionRepository.findById(1L))
+                .thenReturn(Optional.empty());
+
+        assertThrows(
+                NotFoundException.class,
+                () -> sessionService.noLongerParticipate(1L, 1L)
+        );
+    }
+
+
+
 }
