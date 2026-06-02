@@ -47,3 +47,6 @@ Exlusion des tests tout élément DTO et la classe principale
 Refactor : pom.xml
 
 ![Jacoco_NoDto_dev7.png](pictures/Jacoco_NoDto_dev7.png)
+
+# solution_back < dev7
+Renommer Myreadme.md en README_BACK.md
