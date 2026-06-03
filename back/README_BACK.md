@@ -50,3 +50,5 @@ Refactor : pom.xml
 
 # solution_back < dev7
 Renommer Myreadme.md en README_BACK.md
+
+# main < merge 
