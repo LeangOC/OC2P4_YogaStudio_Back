@@ -19,9 +19,11 @@ import java.util.Date;
 public class JwtUtils {
     @Value("${oc.app.jwtSecret}")
     private String jwtSecret;
+    //String jwtSecret; //ajout pour test
 
     @Value("${oc.app.jwtExpirationMs}")
     private int jwtExpirationMs;
+    //int jwtExpirationMs;
 
     public String generateJwtToken(Authentication authentication) {
 
@@ -55,5 +57,12 @@ public class JwtUtils {
             log.error("JWT claims string is empty: {}", e.getMessage());
         }
         return false;
+    }
+    public void setJwtSecret(String jwtSecret) {
+        this.jwtSecret = jwtSecret;
+    }
+
+    public void setJwtExpirationMs(int jwtExpirationMs) {
+        this.jwtExpirationMs = jwtExpirationMs;
     }
 }
